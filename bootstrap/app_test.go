@@ -28,7 +28,7 @@ func TestMain1(t *testing.T) {
 	}
 	for i := 0; i < 1000; i++ {
 
-		logwriter.WriteLine(fmt.Sprintf("log %d", i))
+		logwriter.WriteLine([]byte(fmt.Sprintf("log %d", i)), 0)
 		time.Sleep(time.Second)
 	}
 	fmt.Println("done!")
