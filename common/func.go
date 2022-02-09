@@ -13,3 +13,10 @@ func AppRecover() {
 		os.Exit(1)
 	}
 }
+
+func CheckPanic(err error) {
+
+	if err != nil {
+		panic(err)
+	}
+}

@@ -25,8 +25,12 @@ type LogWaiterApp struct {
 	ParamDebugParam  bool
 }
 
-const ExampleShell = `./main|./logwaiter -w=log/service.log.#Y#m#d --split-size=200m --clean=log/service.log.* --clean-retain-times=46h --clean-max-retain-count=10 --clean-scan-time=10s`
-const BufferSize = 100
+const ExampleShell = `./main|./logwaiter -w=log/service.log.#Y#m#d#H#i --split-size=200m --clean=log/service.log.* --clean-retain-times=46h --clean-max-retain-count=10 --clean-scan-time=10s`
+
+const flushDuration = time.Second
+
+var flushTimer = time.NewTimer(flushDuration)
+var secondNumber = logwriter.TNumber{}
 
 func (l *LogWaiterApp) loadParam() bool {
 
@@ -68,6 +72,25 @@ func (l *LogWaiterApp) loadWriter() bool {
 	return true
 }
 
+func (l *LogWaiterApp) StartSecondTimer() {
+	timer := time.NewTimer(time.Second)
+	go func() {
+		defer func() {
+			defer common.AppRecover()
+		}()
+		for {
+			<-timer.C
+			//refresh path
+			fmt.Println("number ", secondNumber.Get())
+			if secondNumber.Get() < 10 {
+				logwriter.CheckWrap()
+			} else {
+				logwriter.CheckUnWrap()
+			}
+			timer.Reset(time.Second)
+		}
+	}()
+}
 func (l *LogWaiterApp) loopWrite() bool {
 
 	reader := bufio.NewReader(os.Stdin)
@@ -81,7 +104,10 @@ func (l *LogWaiterApp) loopWrite() bool {
 			break
 		}
 		logwriter.WriteLine(string(line))
+		secondNumber.Incr()
 	}
+	logwriter.Flush()
+	logwriter.Close()
 	return true
 }
 func (l *LogWaiterApp) StartPathTimer() {
@@ -98,20 +124,8 @@ func (l *LogWaiterApp) StartPathTimer() {
 		}
 	}()
 }
-func (l *LogWaiterApp) StartFlushTimer() {
-	timer := time.NewTimer(time.Second)
-	go func() {
-		defer func() {
-			defer common.AppRecover()
-		}()
-		for {
-			<-timer.C
-			//refresh path
-			logwriter.Flush()
-			timer.Reset(time.Second)
-		}
-	}()
-}
+
+//todo clean
 
 func (l *LogWaiterApp) Start() {
 
@@ -125,7 +139,7 @@ func (l *LogWaiterApp) Start() {
 		return
 	}
 	l.StartPathTimer()
-	l.StartFlushTimer()
+	l.StartSecondTimer()
 	if !l.loopWrite() {
 		return
 	}

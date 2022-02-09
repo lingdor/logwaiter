@@ -3,6 +3,8 @@ package logwriter
 import (
 	"bufio"
 	"fmt"
+	"github.com/lingdor/logwaiter/common"
+	"io"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -10,16 +12,56 @@ import (
 	"unsafe"
 )
 
-const BufferSize = 100
+const BufferSize = 1024 * 32
 
 var writer unsafe.Pointer
 
 var indexNumber inc
 var lastPath string
 
+type LogWriter interface {
+	io.Writer
+	io.Closer
+	Flush() error
+	UnWrap() LogWriter
+}
 type logWriter struct {
 	writer *bufio.Writer
 	file   *os.File
+}
+
+func (l *logWriter) Write(p []byte) (n int, err error) {
+	fmt.Println("base write:", string(p))
+	return l.writer.Write(p)
+}
+func (l *logWriter) Close() error {
+	return l.file.Close()
+}
+func (l *logWriter) Flush() error {
+	return l.writer.Flush()
+}
+func (l *logWriter) UnWrap() LogWriter {
+	return l
+}
+
+type wrapLogWriter struct {
+	writer LogWriter
+}
+
+func (l *wrapLogWriter) Write(p []byte) (n int, err error) {
+	fmt.Println("writing.. now", string(p))
+	write, err := l.writer.Write(p)
+	l.writer.Flush()
+	return write, err
+}
+func (l *wrapLogWriter) Close() error {
+	return l.writer.Close()
+}
+func (l *wrapLogWriter) Flush() error {
+	return l.writer.Flush()
+}
+func (l *wrapLogWriter) UnWrap() LogWriter {
+	return l.writer
 }
 
 func init() {
@@ -32,6 +74,7 @@ func LoadWriter(writePath string, splitLength int64) {
 	} else {
 		return
 	}
+	fmt.Println("newpath:", writePath, "lastpath:", lastPath)
 	path := writePath
 	for ; ; indexNumber.Add() {
 		if indexNumber.Get() != 0 {
@@ -52,34 +95,40 @@ func LoadWriter(writePath string, splitLength int64) {
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		//open file failed
+		indexNumber.Add()
 		LoadWriter(writePath, splitLength)
 		return
 	}
 
 	newFileWriter := bufio.NewWriterSize(file, BufferSize)
-	newFile := logWriter{
-		file:   file,
-		writer: newFileWriter,
+	newFile := wrapLogWriter{
+		writer: &logWriter{
+			file:   file,
+			writer: newFileWriter,
+		},
 	}
+	lastPath = path
 	swapWriter(&newFile)
 }
 
-func swapWriter(w *logWriter) {
+func swapWriter(w LogWriter) {
 	old := getWriter()
-	newPointer := (unsafe.Pointer)(w)
+	newPointer := (unsafe.Pointer)(&w)
 	atomic.SwapPointer(&writer, newPointer)
 	if old != nil {
-		old.writer.Flush()
-		old.file.Close()
+		time.Sleep(time.Millisecond)
+		old.Flush()
+		old.Close()
 	}
 }
 
-func getWriter() *logWriter {
+func getWriter() LogWriter {
 	if writer == nil {
 		return nil
 	}
 	pointer := atomic.LoadPointer(&writer)
-	return (*logWriter)(pointer)
+	val := (*LogWriter)(pointer)
+	return *val
 }
 
 func replaceDate(writePath string) string {
@@ -101,16 +150,18 @@ func WriteLine(line string) {
 	if writer == nil {
 		return
 	}
-	writer.writer.Write([]byte(line))
-	writer.writer.Write([]byte{'\n'})
+	_, err := writer.Write([]byte(line + "\n"))
+	common.CheckPanic(err)
 }
 
 func Flush() {
 	writer := getWriter()
+
 	if writer == nil {
 		return
 	}
-	writer.writer.Flush()
+	err := writer.Flush()
+	common.CheckPanic(err)
 }
 
 func Close() {
@@ -118,6 +169,29 @@ func Close() {
 	if writer == nil {
 		return
 	}
-	writer.writer.Flush()
-	writer.file.Close()
+	writer.Flush()
+	writer.Close()
+}
+
+func CheckWrap() {
+	writer := getWriter()
+	if writer == nil {
+		return
+	}
+	unwrap := writer.UnWrap()
+	if unwrap != writer {
+		return
+	}
+	swapWriter(&wrapLogWriter{writer: unwrap})
+}
+func CheckUnWrap() {
+	writer := getWriter()
+	if writer == nil {
+		return
+	}
+	unwrap := writer.UnWrap()
+	if unwrap == writer {
+		return
+	}
+	swapWriter(unwrap)
 }
