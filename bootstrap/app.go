@@ -7,6 +7,7 @@ import (
 	"github.com/lingdor/logwaiter/fullflag"
 	"github.com/lingdor/logwaiter/logwriter"
 	"io"
+	"log"
 	"os"
 	"time"
 )
@@ -81,7 +82,8 @@ func (l *LogWaiterApp) StartSecondTimer() {
 		for {
 			<-timer.C
 			//refresh path
-			fmt.Println("number ", secondNumber.Get())
+
+			log.Println("second send count: ", secondNumber.Get())
 			if secondNumber.Get() < 10 {
 				logwriter.CheckWrap()
 			} else {
@@ -103,7 +105,7 @@ func (l *LogWaiterApp) loopWrite() bool {
 			fmt.Println(err.Error())
 			break
 		}
-		logwriter.WriteLine(string(line))
+		logwriter.WriteLine(line, 0)
 		secondNumber.Incr()
 	}
 	logwriter.Flush()

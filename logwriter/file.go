@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/lingdor/logwaiter/common"
 	"io"
+	"log"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -12,7 +13,8 @@ import (
 	"unsafe"
 )
 
-const BufferSize = 1024 * 32
+const BufferSize = 1024 * 2
+const WriteMaxRetry = 3
 
 var writer unsafe.Pointer
 
@@ -31,7 +33,6 @@ type logWriter struct {
 }
 
 func (l *logWriter) Write(p []byte) (n int, err error) {
-	fmt.Println("base write:", string(p))
 	return l.writer.Write(p)
 }
 func (l *logWriter) Close() error {
@@ -49,7 +50,6 @@ type wrapLogWriter struct {
 }
 
 func (l *wrapLogWriter) Write(p []byte) (n int, err error) {
-	fmt.Println("writing.. now", string(p))
 	write, err := l.writer.Write(p)
 	l.writer.Flush()
 	return write, err
@@ -74,7 +74,6 @@ func LoadWriter(writePath string, splitLength int64) {
 	} else {
 		return
 	}
-	fmt.Println("newpath:", writePath, "lastpath:", lastPath)
 	path := writePath
 	for ; ; indexNumber.Add() {
 		if indexNumber.Get() != 0 {
@@ -107,6 +106,7 @@ func LoadWriter(writePath string, splitLength int64) {
 			writer: newFileWriter,
 		},
 	}
+	log.Println(fmt.Sprintf("log path chanage: %s -> %s", lastPath, path))
 	lastPath = path
 	swapWriter(&newFile)
 }
@@ -115,7 +115,7 @@ func swapWriter(w LogWriter) {
 	old := getWriter()
 	newPointer := (unsafe.Pointer)(&w)
 	atomic.SwapPointer(&writer, newPointer)
-	if old != nil {
+	if old != nil && old.UnWrap() != w.UnWrap() {
 		time.Sleep(time.Millisecond)
 		old.Flush()
 		old.Close()
@@ -145,23 +145,27 @@ func replaceDate(writePath string) string {
 	return writePath
 }
 
-func WriteLine(line string) {
+func WriteLine(line []byte, retry int) {
 	writer := getWriter()
 	if writer == nil {
 		return
 	}
-	_, err := writer.Write([]byte(line + "\n"))
-	common.CheckPanic(err)
+	_, err := writer.Write(append(line, byte('\n')))
+	if err != nil {
+		if retry < WriteMaxRetry {
+			WriteLine(line, retry+1)
+			return
+		}
+		common.CheckPanic(err)
+	}
 }
 
 func Flush() {
 	writer := getWriter()
-
 	if writer == nil {
 		return
 	}
-	err := writer.Flush()
-	common.CheckPanic(err)
+	writer.Flush()
 }
 
 func Close() {
