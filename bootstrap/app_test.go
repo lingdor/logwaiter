@@ -10,14 +10,14 @@ import (
 func TestMain1(t *testing.T) {
 
 	l := &LogWaiterApp{
-		ParamWrite:       "/tmp/aa.log",
-		ParamSplitSize:   100,
-		ParamHelp:        false,
-		ParamClean:       "/tmp/aa.log.*",
-		ParamRetainTimes: 0,
-		ParamMaxCount:    0,
-		ParamScantime:    0,
-		ParamDebugParam:  false,
+		ParamWrite:         "/tmp/aa.log",
+		ParamSplitSize:     100,
+		ParamHelp:          false,
+		ParamClean:         "/tmp/aa.log.*",
+		ParamRetainTimes:   0,
+		ParamMaxCount:      0,
+		ParamCleanScantime: 0,
+		ParamDebugParam:    false,
 	}
 
 	if !l.validParam() {

@@ -3,12 +3,14 @@ package bootstrap
 import (
 	"bufio"
 	"fmt"
+	"github.com/lingdor/logwaiter/cleaner"
 	"github.com/lingdor/logwaiter/common"
 	"github.com/lingdor/logwaiter/fullflag"
 	"github.com/lingdor/logwaiter/logwriter"
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -16,22 +18,23 @@ type App interface {
 	Start()
 }
 type LogWaiterApp struct {
-	ParamWrite       string
-	ParamSplitSize   int
-	ParamHelp        bool
-	ParamClean       string
-	ParamRetainTimes time.Duration
-	ParamMaxCount    int
-	ParamScantime    time.Duration
-	ParamDebugParam  bool
+	ParamWrite            string
+	ParamSplitSize        int
+	ParamHelp             bool
+	ParamClean            string
+	ParamCleanRetainTimes time.Duration
+	ParamCleanMaxRetain   int
+	ParamCleanScantime    time.Duration
+	ParamDebugParam       bool
 }
 
-const ExampleShell = `./main|./logwaiter -w=log/service.log.#Y#m#d#H#i --split-size=200m --clean=log/service.log.* --clean-retain-times=46h --clean-max-retain-count=10 --clean-scan-time=10s`
+const ExampleShell = `./main|./logwaiter -w=log/service.log.#Y#m#d#H#i --split-size=200m --clean=log/service.log.* --clean-retain-times=46h --clean-max-retain=10 --clean-scan-time=10s`
 
 const flushDuration = time.Second
 
 var flushTimer = time.NewTimer(flushDuration)
 var secondNumber = logwriter.TNumber{}
+var cleanerIns = cleaner.Cleaner{}
 
 func (l *LogWaiterApp) loadParam() bool {
 
@@ -39,9 +42,9 @@ func (l *LogWaiterApp) loadParam() bool {
 	fullflag.BoolVar(&l.ParamHelp, "help", "h", false, "show help document")
 	fullflag.FileSizeVar(&l.ParamSplitSize, "split-size", "s", 0, "split log file when file size,for example: 100m")
 	fullflag.StringVar(&l.ParamClean, "clean", "", "", "split log file when file size,for example: 100m")
-	fullflag.DurationVar(&l.ParamRetainTimes, "clean-retain-times", "", 0, "when clean action,retain log times for file last modify times,for example: 100days")
-	fullflag.IntVar(&l.ParamMaxCount, "clean-max-retain-count", "", 0, "when clean action,max count of files")
-	fullflag.DurationVar(&l.ParamScantime, "clean-scan-time", "", time.Second*10, "when clean action, scan times duration,default: 3s")
+	fullflag.DurationVar(&l.ParamCleanRetainTimes, "clean-retain-times", "", 0, "when clean action,retain log times for file last modify times,for example: 100days")
+	fullflag.IntVar(&l.ParamCleanMaxRetain, "clean-max-retain", "", 0, "when clean action,max count of files")
+	fullflag.DurationVar(&l.ParamCleanScantime, "clean-scan-time", "", time.Second*10, "when clean action, scan times duration,default: 3s")
 	fullflag.BoolVar(&l.ParamDebugParam, "debug-param", "", false, "print parameters.")
 	fullflag.Parse()
 	return true
@@ -113,7 +116,7 @@ func (l *LogWaiterApp) loopWrite() bool {
 	return true
 }
 func (l *LogWaiterApp) StartPathTimer() {
-	timer := time.NewTimer(l.ParamScantime)
+	timer := time.NewTimer(l.ParamCleanScantime)
 	go func() {
 		defer func() {
 			defer common.AppRecover()
@@ -122,12 +125,20 @@ func (l *LogWaiterApp) StartPathTimer() {
 			<-timer.C
 			//refresh path
 			logwriter.LoadWriter(l.ParamWrite, int64(l.ParamSplitSize))
-			timer.Reset(l.ParamScantime)
+			timer.Reset(l.ParamCleanScantime)
 		}
 	}()
 }
 
-//todo clean
+func (l *LogWaiterApp) StartCleanTimer() {
+	cleanerIns.RetainTimes = l.ParamCleanRetainTimes
+	cleanerIns.MaxRetain = l.ParamCleanMaxRetain
+	cleanerIns.ScanTime = l.ParamCleanScantime
+	cleanerIns.ScanPath = l.ParamClean
+	if strings.TrimSpace(cleanerIns.ScanPath) != "" {
+		cleanerIns.Start()
+	}
+}
 
 func (l *LogWaiterApp) Start() {
 
@@ -142,6 +153,7 @@ func (l *LogWaiterApp) Start() {
 	}
 	l.StartPathTimer()
 	l.StartSecondTimer()
+
 	if !l.loopWrite() {
 		return
 	}
@@ -149,6 +161,7 @@ func (l *LogWaiterApp) Start() {
 	fmt.Println("done.")
 }
 
-func NewApp() App {
-	return &LogWaiterApp{}
+func NewApp()
+App{
+return &LogWaiterApp{}
 }
